@@ -1,0 +1,18 @@
+{
+  "name": "check-in-event",
+  "version": "1.0.0",
+  "description": "",
+  "main": "lib/server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^0.18.0",
+    "express": "^4.16.4",
+    "nconf-camel-cased": "^5.0.0",
+    "node-fetch": "^2.3.0",
+    "request": "^2.88.0"
+  }
+}
