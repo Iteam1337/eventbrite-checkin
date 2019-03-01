@@ -1,43 +1,57 @@
 const app = require('./lib/server')
 const trainer = require('./lib/avatarTrainer')
-const camera = require('./lib/camera')
+const ipCamera = require('./lib/ipCamera')
+const webcam = require('./lib/webcam')
 const eventbrite = require('./lib/eventbrite')
 const beep = require('beepbeep')
-const { fromEvent } = require('rxjs')
+const { from, fromEvent, pipe } = require('rxjs')
 const { map, filter, mergeMap, tap, mergeAll, catchError, doto} = require('rxjs/operators')
 const fr = require('face-recognition')
 const { 
   port, 
   event: { id: eventId },
-  minimumDistance,
+  maximumDistance,
   cameraUrl,
  } = require('./lib/config')
 
- const loggedIn = {}
+const loggedIn = {}
 
-const {detector, recognizer} = trainer(eventId)
-const frames = camera(cameraUrl, 1000)
-const checkedIn = fromEvent(frames, 'frame').pipe(
-  mergeMap(filename => detector.detectFaces(fr.loadImage(filename))),
-  filter(faces => faces.length),
-  tap(faces => console.log(`[ ] Detected ${faces.length} face(s)`)),
-  mergeAll(),
-  mergeMap(face => recognizer.predictBest(face)),
-  map(({className:email, distance}) => ({email, distance})),
-  filter(({email, distance}) => {
-    if (loggedIn[email]) return console.log(`[ ] Already checked in ${email}`)
-    if (distance < minimumDistance) return console.log(`[ ] Didn't recognize this face. ${distance * 100}% ${email} < 90%`)
-    console.log(`[ ] Recognized ${email} with ${distance * 100}% accuracy!`)
-    return true
-  }),
-  tap(({className:email}) => console.log(`[ ] Checking in ${email}...`)),
-  mergeMap(({className:email}) => eventbrite.checkIn(email)),
-)
+async function main () {  
+  const {detector, recognizer} = await trainer(eventId)
+  
+  const filenames = fromEvent(webcam('./images/camera.jpg', 1000), 'frame') //from(['./images/cln.jpg']) //
+  console.log('[x] Done training!')
+  
+  const faces = () => pipe(
+    mergeMap(filename => detector.detectFaces(fr.loadImage(filename))),
+    filter(faces => faces.length),
+  )
 
-checkedIn.subscribe(({email}) => {
-  loggedIn[email] = true
-  console.log(`[x] Done checking in ${email}!`)
-  beep(1)
-})
+  const find = () => pipe(
+    mergeAll(),
+    mergeMap(face => recognizer.predictBest(face)),
+    map(({className:email, distance}) => ({email, distance})),
+  )
 
-app.listen(port, () => console.log(`Server started on port ${port}`))
+  const checkedIn = filenames.pipe(
+    faces(),
+    tap(faces => console.log(`[ ] Detected ${faces.length} face(s)`)),
+    find(),
+    filter(({email, distance}) => {
+      if (distance > maximumDistance) return console.log(`[ ] Didn't recognize this face. ${(distance)} distance ${email} > 0.5`)
+      if (loggedIn[email]) return console.log(`[ ] Already checked in ${email}`)
+      return true
+    }),
+    tap(({email, distance}) => console.log(`[ ] [ ] Recognized ${email} with ${(distance)} distance!`)),
+    tap(({email}) => console.log(`[ ] Checking in ${email}... (disabled)`)),
+    //mergeMap(({email}) => eventbrite.checkIn(email)),
+  )
+
+  checkedIn.subscribe(({email}) => {
+    loggedIn[email] = true
+    console.log(`[x] Done checking in ${email}!`)
+    beep(1)
+  })
+}
+
+main()
